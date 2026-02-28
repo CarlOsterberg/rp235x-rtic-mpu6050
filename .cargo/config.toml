@@ -3,10 +3,10 @@
 # - `probe-rs` provides flashing and defmt via a hardware debugger, and stack unwind on panic
 # - `picotool` loads an elf, skipping unchanged flash sectors, verify it, and execute it
 # If you have a debugger supporting swd, connect it to the debug pins and use below.
-runner = "probe-rs run --chip RP235x --protocol swd"
+#runner = "probe-rs run --chip RP235x --protocol swd"
 # If you only have a usb cable you can put the pico 2w into mass storage mode by
 # holding the bootsel button while powering on the device. The run below to flash and run the code on your device.
-#runner = "sudo picotool load -u -v -x -t elf"
+runner = "sudo picotool load -u -v -x -t elf"
 
 # Pass some extra options to rustc, some of which get passed on to the linker.
 #

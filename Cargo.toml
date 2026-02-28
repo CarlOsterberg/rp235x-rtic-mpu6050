@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name = "rp235x-project-template"
+name = "rp235x-rtic-mpu6050"
 version = "0.1.0"
 license = "MIT OR Apache-2.0"
 
@@ -12,7 +12,7 @@ fugit = "0.3"
 defmt = "1"
 defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
-
+heapless = "0.8"
 rp235x-hal = { version = "0.3", features = [
     "rt",
     "critical-section-impl",
@@ -72,6 +72,6 @@ opt-level = 0
 #opt-level = 3
 
 [[bin]]
-name = "rp235x-project-template"
+name = "rp235x-rtic-mpu6050"
 test = false
 bench = false
