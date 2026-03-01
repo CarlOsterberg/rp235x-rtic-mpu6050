@@ -135,9 +135,8 @@ mod app {
 
         uart.write_full_blocking(b"Hello RTIC mpu6050!\r\n");
 
+        // Enable the interrupts on this specific pin
         let interrupt = pins.gpio6.into_pull_up_input();
-
-        // Enable the interrupt on this specific pin
         interrupt.set_interrupt_enabled(hal::gpio::Interrupt::EdgeHigh, true);
 
         let sensor_adr: u8 = 0x68u8;
