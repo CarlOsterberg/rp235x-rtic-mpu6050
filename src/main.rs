@@ -253,7 +253,7 @@ mod app {
                 let q = gy_rad_ps;
                 let r = -gx_rad_ps;
                 // Now calculate:
-                //  ⌈  phi_dot  ⌉   ⌈ 1 sin(phi)tan(theta) cos(phi)tan(theta) ⌉   ⌈ p ⌉ 
+                //  ⌈  phi_dot  ⌉   ⌈ 1 sin(phi)tan(theta) cos(phi)tan(theta) ⌉   ⌈ p ⌉
                 //  ⌊ theta_dot ⌋ = ⌊ 0     cos(phi)            -sin(phi)     ⌋ * | q |
                 //                                                                ⌊ r ⌋
                 let a = Matrix::from_array([
@@ -266,17 +266,21 @@ mod app {
                 ]);
                 let b = Matrix::from_array([[p], [q], [r]]);
                 let phi_and_theta_dot = a * b;
-                let phi_dot = phi_and_theta_dot.get(0,0);
-                let theta_dot = phi_and_theta_dot.get(1,0);
-                // Now numerically integrate theta_dot and phi_dot with respect to time, dt 
-                let dt = 1.0 / *ctx.local.sample_rate_hz as f32;
-                let theta_gyro = *ctx.local.theta_hat + theta_dot * dt;
-                let phi_gyro = *ctx.local.phi_hat + phi_dot * dt;
+                let phi_dot = phi_and_theta_dot.get(0, 0);
+                let theta_dot = phi_and_theta_dot.get(1, 0);
                 // ----------------------- GYRO -----------------------
 
                 // --------------- COMPLEMENTARY FILTER ---------------
-                let alpha = *ctx.local.alpha;
+                // To calculate the next time step of the complementary filter, do the following:
+                // theta_hat_n+1 = theta_n_accel * alpha + (1 - alpha) * (theta_hat_n + T * theta_dot_gyro_n)
+                // phi_hat_n+1 = phi_n_accel * alpha + (1 - alpha) * (phi_hat_n + T * phi_dot_gyro_n)
 
+                // Numerically integrate theta_dot and phi_dot with respect to time, dt
+                let dt = 1.0 / *ctx.local.sample_rate_hz as f32;
+                let theta_gyro = *ctx.local.theta_hat + theta_dot * dt;
+                let phi_gyro = *ctx.local.phi_hat + phi_dot * dt;
+                
+                let alpha = *ctx.local.alpha;
                 *ctx.local.theta_hat = (1.0 - alpha) * theta_gyro + alpha * theta_n_accel;
                 *ctx.local.phi_hat = (1.0 - alpha) * phi_gyro + alpha * phi_n_accel;
                 // --------------- COMPLEMENTARY FILTER ---------------
