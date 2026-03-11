@@ -6,6 +6,7 @@ use defmt_rtt as _;
 use embedded_hal::i2c::I2c;
 use fugit::RateExtU32;
 use heapless::String;
+use libm::{asinf, atanf, cosf, sinf, tanf};
 use panic_probe as _;
 use rp235x_hal::{
     self as hal, Clock,
@@ -69,6 +70,10 @@ mod app {
         uart: Uart0,
         i2c: I2c0,
         interrupt: InterruptPin,
+        phi_hat: f32,
+        theta_hat: f32,
+        sample_rate_hz: u32,
+        alpha: f32,
     }
 
     #[init]
@@ -88,8 +93,8 @@ mod app {
             &mut ctx.device.RESETS,
             &mut watchdog,
         )
-            .ok()
-            .unwrap();
+        .ok()
+        .unwrap();
 
         let sio = Sio::new(ctx.device.SIO);
 
@@ -105,7 +110,9 @@ mod app {
             pins.gpio1.into_function::<hal::gpio::FunctionUart>(),
         );
 
-        let baudrate: u32 = 115_200;
+        // let baudrate: u32 = 115_200;
+        // let baudrate: u32 = 230_400;
+        let baudrate: u32 = 460_800;
 
         let uart =
             hal::uart::UartPeripheral::new(ctx.device.UART0, uart_pins, &mut ctx.device.RESETS)
@@ -128,7 +135,7 @@ mod app {
             ctx.device.I2C0,
             sda_pin,
             scl_pin,
-            400.kHz(),
+            100.kHz(),
             &mut ctx.device.RESETS,
             clocks.system_clock.freq(),
         );
@@ -145,16 +152,29 @@ mod app {
             Ok(_) => uart.write_full_blocking(b"Sensor wakeup OK\r\n"),
             Err(_) => uart.write_full_blocking(b"Sensor wakeup failed\r\n"),
         }
-        // Set sample rate divider - slows output to 100Hz (1000Hz / (1 + 9))
-        // Default is 1000Hz which is too fast for uart...
-        match i2c.write(sensor_adr, &[0x19, 9]) {
+        // Enable Digital Low Pass Filter, this also sets sample rate to 1 kHz.
+        // Without DLPF the sample rate is 8 kHz.
+        match i2c.write(sensor_adr, &[0x1A, 0x06]) {
             Ok(_) => uart.write_full_blocking(b"Sample rate set OK\r\n"),
             Err(_) => uart.write_full_blocking(b"Sample rate set failed\r\n"),
         }
+
+        // Set sample rate divider - slows output to 10 Hz ( 1000Hz / (1 + 99) )
+        let sample_rate_divider = 0x9;
+        match i2c.write(sensor_adr, &[0x19, sample_rate_divider]) {
+            Ok(_) => uart.write_full_blocking(b"Sample rate set OK\r\n"),
+            Err(_) => uart.write_full_blocking(b"Sample rate set failed\r\n"),
+        }
+        let sample_rate_hz: u32 = 1000 / (1 + sample_rate_divider as u32);
+        // Enable interrupt
         match i2c.write(sensor_adr, &[0x38, 0x01]) {
             Ok(_) => uart.write_full_blocking(b"Sensor interrupt enable OK\r\n"),
             Err(_) => uart.write_full_blocking(b"Sensor interrupt enable failed\r\n"),
         }
+
+        let phi_hat: f32 = 0.0;
+        let theta_hat: f32 = 0.0;
+        let alpha: f32 = 0.05;
 
         (
             Shared {},
@@ -162,6 +182,10 @@ mod app {
                 uart,
                 i2c,
                 interrupt,
+                phi_hat,
+                theta_hat,
+                sample_rate_hz,
+                alpha,
             },
         )
     }
@@ -175,13 +199,19 @@ mod app {
 
     #[task(binds = IO_IRQ_BANK0, local = [interrupt], priority = 2)]
     fn gpio_irq(ctx: gpio_irq::Context) {
-        if ctx.local.interrupt.interrupt_status(hal::gpio::Interrupt::EdgeHigh) {
-            ctx.local.interrupt.clear_interrupt(hal::gpio::Interrupt::EdgeHigh);
+        if ctx
+            .local
+            .interrupt
+            .interrupt_status(hal::gpio::Interrupt::EdgeHigh)
+        {
+            ctx.local
+                .interrupt
+                .clear_interrupt(hal::gpio::Interrupt::EdgeHigh);
             read_i2c::spawn().ok();
         }
     }
 
-    #[task(local = [i2c, uart], priority = 1)]
+    #[task(local = [i2c, uart, phi_hat, theta_hat, sample_rate_hz, alpha], priority = 1)]
     async fn read_i2c(ctx: read_i2c::Context) {
         let sensor_adr: u8 = 0x68u8;
         let mut s: String<64> = String::new();
@@ -190,14 +220,64 @@ mod app {
         let mut buffer = [0u8; 14];
         match ctx.local.i2c.write_read(sensor_adr, &[0x3B], &mut buffer) {
             Ok(_) => {
-                let ax = i16::from_be_bytes([buffer[0], buffer[1]]);
-                let ay = i16::from_be_bytes([buffer[2], buffer[3]]);
-                let az = i16::from_be_bytes([buffer[4], buffer[5]]);
-                let gx = i16::from_be_bytes([buffer[8], buffer[9]]);
-                let gy = i16::from_be_bytes([buffer[10], buffer[11]]);
-                let gz = i16::from_be_bytes([buffer[12], buffer[13]]);
-                write!(s, "Accel [{},{},{}]\r\nGyro  [{},{},{}]\r\n",
-                       ax, ay, az, gx, gy, gz).unwrap();
+                // ---------------------- ACCEL -----------------------
+                let accelerometer_lsb = 16_384f32; // 16384 == 1g
+                let g = 9.82f32;
+                let raw_accelerometer_x = i16::from_be_bytes([buffer[0], buffer[1]]);
+                let raw_accelerometer_y = i16::from_be_bytes([buffer[2], buffer[3]]);
+                let raw_accelerometer_z = i16::from_be_bytes([buffer[4], buffer[5]]);
+                // First convert sensor values to m/s^2
+                let ax = raw_accelerometer_x as f32 / accelerometer_lsb * g;
+                let ay = raw_accelerometer_y as f32 / accelerometer_lsb * g;
+                let az = raw_accelerometer_z as f32 / accelerometer_lsb * g;
+                // And now calculate pitch and roll according to,
+                // theta_hat = arcsin(ax/g) = pitch
+                // phi_hat = arctan(ay/az) = roll
+                // but due to sensor orientation on breadboard,
+                // -ax = z
+                // ay = y
+                // az = x
+                let theta_n_accel = asinf(az / g);
+                let phi_n_accel = atanf(ay / (-ax));
+                // ---------------------- ACCEL -----------------------
+
+                // ----------------------- GYRO -----------------------
+                let gx_degrees_ps = i16::from_be_bytes([buffer[8], buffer[9]]);
+                let gy_degrees_ps = i16::from_be_bytes([buffer[10], buffer[11]]);
+                let gz_degrees_ps = i16::from_be_bytes([buffer[12], buffer[13]]);
+                // Convert from sensor reading to rad/s
+                let gyro_lsb = 131f32;
+                let gx_rad_ps = gx_degrees_ps as f32 / gyro_lsb * core::f32::consts::PI / 180.0;
+                let gy_rad_ps = gy_degrees_ps as f32 / gyro_lsb * core::f32::consts::PI / 180.0;
+                let gz_rad_ps = gz_degrees_ps as f32 / gyro_lsb * core::f32::consts::PI / 180.0;
+                // Due to sensor orientation on breadboard,
+                let p = gz_rad_ps;
+                let q = gy_rad_ps;
+                let r = -gx_rad_ps;
+
+                let theta_dot = cosf(*ctx.local.phi_hat) * q - sinf(*ctx.local.phi_hat) * r;
+                let phi_dot = p + tanf(*ctx.local.theta_hat)
+                    * (sinf(*ctx.local.phi_hat) * q + cosf(*ctx.local.phi_hat) * r);
+
+                let dt = 1.0 / *ctx.local.sample_rate_hz as f32;
+
+                let theta_gyro = *ctx.local.theta_hat + theta_dot * dt;
+                let phi_gyro = *ctx.local.phi_hat + phi_dot * dt;
+                // ----------------------- GYRO -----------------------
+
+                // --------------- COMPLEMENTARY FILTER ---------------
+                let alpha = *ctx.local.alpha;
+
+                *ctx.local.theta_hat = (1.0 - alpha) * theta_gyro + alpha * theta_n_accel;
+                *ctx.local.phi_hat = (1.0 - alpha) * phi_gyro + alpha * phi_n_accel;
+                // --------------- COMPLEMENTARY FILTER ---------------
+                write!(
+                    s,
+                    "roll:{:.3}\tpitch:{:.3}\r\n",
+                    (*ctx.local.phi_hat).to_degrees(),
+                    (*ctx.local.theta_hat).to_degrees()
+                )
+                .unwrap();
                 ctx.local.uart.write_full_blocking(s.as_bytes());
                 s.clear();
             }

@@ -19,6 +19,9 @@ rp235x-hal = { version = "0.3", features = [
     "binary-info",
 ] }
 rtic-sync = "1.4.0"
+libm = "0.2"
+
+#rust-matrices = {git = "https://github.com/CarlOsterberg/rust-matrices", rev = "e88b6d4" }
 
 [dependencies.rtic]
 version = "2.2.0"
