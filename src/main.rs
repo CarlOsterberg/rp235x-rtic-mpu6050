@@ -16,6 +16,7 @@ use rp235x_hal::{
     watchdog::Watchdog,
 };
 use rtic_monotonics::rp235x::prelude::*;
+use rust_matrices::*;
 
 rp235x_timer_monotonic!(Mono);
 
@@ -30,7 +31,7 @@ pub static IMAGE_DEF: hal::block::ImageDef = hal::block::ImageDef::secure_exe();
 pub static PICOTOOL_ENTRIES: [rp235x_hal::binary_info::EntryAddr; 5] = [
     rp235x_hal::binary_info::rp_cargo_bin_name!(),
     rp235x_hal::binary_info::rp_cargo_version!(),
-    rp235x_hal::binary_info::rp_program_description!(c"RP2350 RTIC hello world"),
+    rp235x_hal::binary_info::rp_program_description!(c"RP2350 RTIC mpu6050 complementary filter"),
     rp235x_hal::binary_info::rp_cargo_homepage_url!(),
     rp235x_hal::binary_info::rp_program_build_attribute!(),
 ];
@@ -140,8 +141,6 @@ mod app {
             clocks.system_clock.freq(),
         );
 
-        uart.write_full_blocking(b"Hello RTIC mpu6050!\r\n");
-
         // Enable the interrupts on this specific pin
         let interrupt = pins.gpio6.into_pull_up_input();
         interrupt.set_interrupt_enabled(hal::gpio::Interrupt::EdgeHigh, true);
@@ -152,14 +151,13 @@ mod app {
             Ok(_) => uart.write_full_blocking(b"Sensor wakeup OK\r\n"),
             Err(_) => uart.write_full_blocking(b"Sensor wakeup failed\r\n"),
         }
-        // Enable Digital Low Pass Filter, this also sets sample rate to 1 kHz.
-        // Without DLPF the sample rate is 8 kHz.
+        // Enable Digital Low Pass Filter, this also sets sample rate to 1 kHz,
+        // without DLPF the sample rate is 8 kHz.
         match i2c.write(sensor_adr, &[0x1A, 0x06]) {
-            Ok(_) => uart.write_full_blocking(b"Sample rate set OK\r\n"),
-            Err(_) => uart.write_full_blocking(b"Sample rate set failed\r\n"),
+            Ok(_) => uart.write_full_blocking(b"DLPF configuration OK\r\n"),
+            Err(_) => uart.write_full_blocking(b"DLPF configuration failed\r\n"),
         }
-
-        // Set sample rate divider - slows output to 10 Hz ( 1000Hz / (1 + 99) )
+        // Set sample rate divider - slows output to 100 Hz ( 1000Hz / (1 + 9) )
         let sample_rate_divider = 0x9;
         match i2c.write(sensor_adr, &[0x19, sample_rate_divider]) {
             Ok(_) => uart.write_full_blocking(b"Sample rate set OK\r\n"),
@@ -221,8 +219,8 @@ mod app {
         match ctx.local.i2c.write_read(sensor_adr, &[0x3B], &mut buffer) {
             Ok(_) => {
                 // ---------------------- ACCEL -----------------------
-                let accelerometer_lsb = 16_384f32; // 16384 == 1g
-                let g = 9.82f32;
+                let accelerometer_lsb = 16_384f32; // 16384/g
+                let g = 9.818f32;
                 let raw_accelerometer_x = i16::from_be_bytes([buffer[0], buffer[1]]);
                 let raw_accelerometer_y = i16::from_be_bytes([buffer[2], buffer[3]]);
                 let raw_accelerometer_z = i16::from_be_bytes([buffer[4], buffer[5]]);
@@ -230,9 +228,9 @@ mod app {
                 let ax = raw_accelerometer_x as f32 / accelerometer_lsb * g;
                 let ay = raw_accelerometer_y as f32 / accelerometer_lsb * g;
                 let az = raw_accelerometer_z as f32 / accelerometer_lsb * g;
-                // And now calculate pitch and roll according to,
-                // theta_hat = arcsin(ax/g) = pitch
-                // phi_hat = arctan(ay/az) = roll
+                // And now calculate theta_hat and phi_hat according to,
+                // theta_hat = arcsin(ax/g)
+                // phi_hat = arctan(ay/az)
                 // but due to sensor orientation on breadboard,
                 // -ax = z
                 // ay = y
@@ -254,13 +252,24 @@ mod app {
                 let p = gz_rad_ps;
                 let q = gy_rad_ps;
                 let r = -gx_rad_ps;
-
-                let theta_dot = cosf(*ctx.local.phi_hat) * q - sinf(*ctx.local.phi_hat) * r;
-                let phi_dot = p + tanf(*ctx.local.theta_hat)
-                    * (sinf(*ctx.local.phi_hat) * q + cosf(*ctx.local.phi_hat) * r);
-
+                // Now calculate:
+                //  ⌈  phi_dot  ⌉   ⌈ 1 sin(phi)tan(theta) cos(phi)tan(theta) ⌉   ⌈ p ⌉ 
+                //  ⌊ theta_dot ⌋ = ⌊ 0     cos(phi)            -sin(phi)     ⌋ * | q |
+                //                                                                ⌊ r ⌋
+                let a = Matrix::from_array([
+                    [
+                        1.0,
+                        sinf(*ctx.local.phi_hat) * tanf(*ctx.local.theta_hat),
+                        cosf(*ctx.local.phi_hat) * tanf(*ctx.local.theta_hat),
+                    ],
+                    [0.0, cosf(*ctx.local.phi_hat), -sinf(*ctx.local.phi_hat)],
+                ]);
+                let b = Matrix::from_array([[p], [q], [r]]);
+                let phi_and_theta_dot = a * b;
+                let phi_dot = phi_and_theta_dot.get(0,0);
+                let theta_dot = phi_and_theta_dot.get(1,0);
+                // Now numerically integrate theta_dot and phi_dot with respect to time, dt 
                 let dt = 1.0 / *ctx.local.sample_rate_hz as f32;
-
                 let theta_gyro = *ctx.local.theta_hat + theta_dot * dt;
                 let phi_gyro = *ctx.local.phi_hat + phi_dot * dt;
                 // ----------------------- GYRO -----------------------

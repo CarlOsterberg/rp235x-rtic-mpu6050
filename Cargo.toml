@@ -21,7 +21,7 @@ rp235x-hal = { version = "0.3", features = [
 rtic-sync = "1.4.0"
 libm = "0.2"
 
-#rust-matrices = {git = "https://github.com/CarlOsterberg/rust-matrices", rev = "e88b6d4" }
+rust-matrices = {git = "https://github.com/CarlOsterberg/rust-matrices", rev = "db7dd3a" }
 
 [dependencies.rtic]
 version = "2.2.0"

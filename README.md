@@ -1,9 +1,9 @@
 # Read sensor data from MPU6050 over i2c on rp pico 235x using RTIC
 
 This program writes information over UART on Gpio0/pin1.
-The UART settings are: baud rate 115200, 8 bits, no parity and 1 stop bit.
+The UART settings are: baud rate 460_800, 8 bits, no parity and 1 stop bit.
 
-Connect the MPU6050 sensor SDA to GPIO4 and SCL to GPIO5.
+Connect the MPU6050 sensor SDA to GPIO4, SCL to GPIO5 and sensor INT to GPIO6.
 
 ### Installing dependencies
 
