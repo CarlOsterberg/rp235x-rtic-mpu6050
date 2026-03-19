@@ -13,6 +13,16 @@ impl SensorValues {
     // Accelerometer values must be in m/s^2
     // Gyroscope values must be in rad/s
     pub fn new(buffer: &[u8;14]) -> Self {
+        // | Sensor  | Register Address        | Bytes | Description  |
+        // | ------- | ----------------------- | ----- | ------------ |
+        // | Accel X | 0x3B (high), 0x3C (low) | 2     | Accel X-axis |
+        // | Accel Y | 0x3D, 0x3E              | 2     | Accel Y-axis |
+        // | Accel Z | 0x3F, 0x40              | 2     | Accel Z-axis |
+        // | Temp    | 0x41, 0x42              | 2     | Temperature  |
+        // | Gyro X  | 0x43, 0x44              | 2     | Gyro X-axis  |
+        // | Gyro Y  | 0x45, 0x46              | 2     | Gyro Y-axis  |
+        // | Gyro Z  | 0x47, 0x48              | 2     | Gyro Z-axis  |
+        // see, https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
 
         let raw_accelerometer_x = i16::from_be_bytes([buffer[0], buffer[1]]);
         let raw_accelerometer_y = i16::from_be_bytes([buffer[2], buffer[3]]);
@@ -32,7 +42,7 @@ impl SensorValues {
         let gy_rad_ps = (gy_degrees_ps as f32 / GYRO_LSB).to_radians();
         let gz_rad_ps = (gz_degrees_ps as f32 / GYRO_LSB).to_radians();
         // ----------------------- GYRO -----------------------
-        
+
         SensorValues {
             // Due to sensor orientation on breadboard,
             // az = x

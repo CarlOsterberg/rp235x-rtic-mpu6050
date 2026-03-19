@@ -185,12 +185,22 @@ mod app {
     async fn read_i2c(ctx: read_i2c::Context) {
         let mut s: String<64> = String::new();
 
-        // Read sensor data
+        // Read sensor data, 14 bytes.
         let mut buffer = [0u8; 14];
+        // | Sensor  | Register Address        | Bytes | Description  |
+        // | ------- | ----------------------- | ----- | ------------ |
+        // | Accel X | 0x3B (high), 0x3C (low) | 2     | Accel X-axis |
+        // | Accel Y | 0x3D, 0x3E              | 2     | Accel Y-axis |
+        // | Accel Z | 0x3F, 0x40              | 2     | Accel Z-axis |
+        // | Temp    | 0x41, 0x42              | 2     | Temperature  |
+        // | Gyro X  | 0x43, 0x44              | 2     | Gyro X-axis  |
+        // | Gyro Y  | 0x45, 0x46              | 2     | Gyro Y-axis  |
+        // | Gyro Z  | 0x47, 0x48              | 2     | Gyro Z-axis  |
+        // see, https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
         match ctx
             .local
             .i2c
-            .write_read(SENSOR_I2C_ADDR, &[0x3B], &mut buffer)
+            .write_read(SENSOR_I2C_ADDR, &[SENSOR_DATA_REG], &mut buffer)
         {
             Ok(_) => {
                 let sensor_values = SensorValues::new(&buffer);
