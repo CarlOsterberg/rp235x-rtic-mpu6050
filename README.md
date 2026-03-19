@@ -15,7 +15,7 @@ cargo install probe-rs-tools # If debugging with SWD
 
 ## Flashing and running the code
 
-There are two ways, either you can use the picotool or probe-rs. The pciotool
+There are two ways, either you can use the picotool or probe-rs. The picotool
 requires fewer tools, but you need to put the device into mass storage mode somehow.
 probe-rs is easier to use, but you need a debugger supporting swd and to solder the debug pins.
 For details see the [cargo config](.cargo/config.toml).
