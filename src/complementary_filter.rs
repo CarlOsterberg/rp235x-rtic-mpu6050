@@ -1,6 +1,7 @@
 use libm::{asinf, atanf, cosf, sinf, tanf};
 use rust_matrices::Matrix;
 use crate::constants;
+use crate::sensor_values::SensorValues;
 
 pub struct ComplementaryFilter {
     phi_hat: f32,
@@ -70,29 +71,5 @@ impl ComplementaryFilter {
 
     pub fn get_pitch(&self) -> f32 {
         self.theta_hat
-    }
-}
-
-pub struct SensorValues {
-    ax: f32,
-    ay: f32,
-    az: f32,
-    gx: f32,
-    gy: f32,
-    gz: f32,
-}
-
-impl SensorValues {
-    // Accelerometer values must be in m/s^2
-    // Gyroscope values must be in rad/s
-    pub fn new(ax: f32, ay: f32, az: f32, gx: f32, gy: f32, gz: f32) -> Self {
-        SensorValues {
-            ax,
-            ay,
-            az,
-            gx,
-            gy,
-            gz,
-        }
     }
 }

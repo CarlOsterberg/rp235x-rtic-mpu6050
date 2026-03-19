@@ -3,6 +3,7 @@
 
 pub mod complementary_filter;
 pub mod constants;
+pub mod sensor_values;
 pub mod type_defs;
 
 use core::fmt::Write;
@@ -22,6 +23,7 @@ use rtic_monotonics::rp235x::prelude::*;
 
 use crate::complementary_filter::*;
 use crate::constants::*;
+use crate::sensor_values::*;
 use crate::type_defs::*;
 
 rp235x_timer_monotonic!(Mono);
@@ -185,38 +187,13 @@ mod app {
 
         // Read sensor data
         let mut buffer = [0u8; 14];
-        match ctx.local.i2c.write_read(SENSOR_I2C_ADDR, &[0x3B], &mut buffer) {
+        match ctx
+            .local
+            .i2c
+            .write_read(SENSOR_I2C_ADDR, &[0x3B], &mut buffer)
+        {
             Ok(_) => {
-                // ---------------------- ACCEL -----------------------
-                let raw_accelerometer_x = i16::from_be_bytes([buffer[0], buffer[1]]);
-                let raw_accelerometer_y = i16::from_be_bytes([buffer[2], buffer[3]]);
-                let raw_accelerometer_z = i16::from_be_bytes([buffer[4], buffer[5]]);
-                //  Convert accelerometer sensor values to m/s^2
-                let ax = raw_accelerometer_x as f32 / ACCEL_LSB * GRAVITY;
-                let ay = raw_accelerometer_y as f32 / ACCEL_LSB * GRAVITY;
-                let az = raw_accelerometer_z as f32 / ACCEL_LSB * GRAVITY;
-                // due to sensor orientation on breadboard,
-                // -ax = z
-                // ay = y
-                // az = x
-                // ---------------------- ACCEL -----------------------
-
-                // ----------------------- GYRO -----------------------
-                let gx_degrees_ps = i16::from_be_bytes([buffer[8], buffer[9]]);
-                let gy_degrees_ps = i16::from_be_bytes([buffer[10], buffer[11]]);
-                let gz_degrees_ps = i16::from_be_bytes([buffer[12], buffer[13]]);
-                // Convert from gyro sensor reading to rad/s
-                let gx_rad_ps = (gx_degrees_ps as f32 / GYRO_LSB).to_radians();
-                let gy_rad_ps = (gy_degrees_ps as f32 / GYRO_LSB).to_radians();
-                let gz_rad_ps = (gz_degrees_ps as f32 / GYRO_LSB).to_radians();
-                // Due to sensor orientation on breadboard,
-                // -gx = z
-                // gy = y
-                // gz = x
-                // ----------------------- GYRO -----------------------
-
-                let sensor_values =
-                    SensorValues::new(az, ay, -ax, gz_rad_ps, gy_rad_ps, -gx_rad_ps);
+                let sensor_values = SensorValues::new(&buffer);
                 ctx.local.complementary_filter.timestep(sensor_values);
 
                 write!(
