@@ -20,6 +20,16 @@ requires fewer tools, but you need to put the device into mass storage mode some
 probe-rs is easier to use, but you need a debugger supporting swd and to solder the debug pins.
 For details see the [cargo config](.cargo/config.toml).
 
+## Material
+
+MPU6050 links
+* [Datasheet](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Datasheet1.pdf)
+* [Register map](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf)
+
+Sensor fusion video inspiration
+* [Accelerometers and Gyroscopes](https://www.youtube.com/watch?v=RZd6XDx5VXo)
+* [Complementary filter](https://www.youtube.com/watch?v=BUW2OdAtzBw)
+
 ## License
 
 The contents of this repository are dual-licensed under the _[MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE-2.0)_ License. That means you can chose either the MIT licence or the
