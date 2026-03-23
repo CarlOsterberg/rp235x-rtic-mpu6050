@@ -1,3 +1,4 @@
+use libm::sqrtf;
 use crate::constants::{ACCEL_LSB, GRAVITY, GYRO_LSB};
 
 pub struct SensorValues {
@@ -59,5 +60,16 @@ impl SensorValues {
             gy: gy_rad_ps,
             gz: -gx_rad_ps,
         }
+    }
+
+    pub fn is_stationary(&self, accel_threshold: f32, gyro_threshold: f32) -> bool {
+        // Check if gyroscope readings are near zero
+        let gyro_mag = sqrtf(self.gx * self.gx + self.gy * self.gy + self.gz * self.gz);
+
+        // Check if accelerometer is close to 1g (gravity only)
+        let accel_mag = sqrtf(self.ax * self.ax + self.ay * self.ay + self.az * self.az);
+        let accel_deviation = (accel_mag - GRAVITY).abs();
+
+        gyro_mag < gyro_threshold && accel_deviation < accel_threshold
     }
 }

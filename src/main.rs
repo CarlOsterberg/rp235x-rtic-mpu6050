@@ -201,9 +201,10 @@ mod app {
 
                 write!(
                     local.string,
-                    "roll:{:.3}\tpitch:{:.3}\r\n",
+                    "roll:{:.3}\tpitch:{:.3}\tstationary:{:?}\r\n",
                     local.complementary_filter.get_roll().to_degrees(),
-                    local.complementary_filter.get_pitch().to_degrees()
+                    local.complementary_filter.get_pitch().to_degrees(),
+                    local.complementary_filter.get_is_stationary()
                 )
                 .unwrap();
                 local.uart.write_full_blocking(local.string.as_bytes());

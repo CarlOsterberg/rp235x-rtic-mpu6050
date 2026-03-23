@@ -1,13 +1,15 @@
-use libm::{asinf, atanf, cosf, sinf, tanf};
-use rust_matrices::Matrix;
 use crate::constants;
 use crate::sensor_values::SensorValues;
+use libm::{asinf, atanf, cosf, sinf, tanf};
+use rust_matrices::Matrix;
 
+// Simple complementary filter using Euler angles
 pub struct ComplementaryFilter {
     phi_hat: f32,
     theta_hat: f32,
     sample_rate_hz: f32,
     alpha: f32,
+    is_stationary: bool,
 }
 
 impl ComplementaryFilter {
@@ -17,8 +19,10 @@ impl ComplementaryFilter {
             theta_hat: 0.0,
             sample_rate_hz,
             alpha,
+            is_stationary: false,
         }
     }
+    // Iterate the filter one timestep using new data
     pub fn timestep(&mut self, values: SensorValues) {
         // ---------------------- ACCEL -----------------------
         // Calculate theta_hat and phi_hat according to,
@@ -63,13 +67,22 @@ impl ComplementaryFilter {
         self.theta_hat = (1.0 - self.alpha) * theta_gyro + self.alpha * theta_n_accel;
         self.phi_hat = (1.0 - self.alpha) * phi_gyro + self.alpha * phi_n_accel;
         // --------------- COMPLEMENTARY FILTER ---------------
+
+        self.is_stationary =
+            values.is_stationary(constants::ACCEL_THRESHOLD, constants::GYRO_THRESHOLD);
     }
-    
+
+    // Get roll in radians
     pub fn get_roll(&self) -> f32 {
         self.phi_hat
     }
 
+    // Get pitch in radians
     pub fn get_pitch(&self) -> f32 {
         self.theta_hat
+    }
+
+    pub fn get_is_stationary(&self) -> bool {
+        self.is_stationary
     }
 }
