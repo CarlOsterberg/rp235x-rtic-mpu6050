@@ -57,6 +57,8 @@ mod app {
         i2c: I2c0,
         interrupt: InterruptPin,
         complementary_filter: ComplementaryFilter,
+        string: String<64>,
+        buffer: [u8;14],
     }
 
     #[init]
@@ -122,7 +124,7 @@ mod app {
         let interrupt = pins.gpio6.into_pull_up_input();
         interrupt.set_interrupt_enabled(hal::gpio::Interrupt::EdgeHigh, true);
 
-        // Wake up the sensor, MPU6050 (it starts in sleep mode)
+        // Wake up the MPU6050 sensor, it starts in sleep mode
         match i2c.write(SENSOR_I2C_ADDR, &[0x6B, 0x00]) {
             Ok(_) => uart.write_full_blocking(b"Sensor wakeup OK\r\n"),
             Err(_) => uart.write_full_blocking(b"Sensor wakeup failed\r\n"),
@@ -149,6 +151,9 @@ mod app {
         let alpha: f32 = 0.05;
         let complementary_filter = ComplementaryFilter::new(sample_rate_hz as f32, alpha);
 
+        let buffer:[u8;14] = [0u8; SENSOR_DATA_NUM_BYTES];
+        let string: String<64> = String::new();
+
         (
             Shared {},
             Local {
@@ -156,6 +161,8 @@ mod app {
                 i2c,
                 interrupt,
                 complementary_filter,
+                buffer,
+                string,
             },
         )
     }
@@ -181,43 +188,29 @@ mod app {
         }
     }
 
-    #[task(local = [i2c, uart, complementary_filter], priority = 1)]
+    #[task(local = [i2c, uart, complementary_filter, buffer, string], priority = 1)]
     async fn read_i2c(ctx: read_i2c::Context) {
-        let mut s: String<64> = String::new();
-
-        // Read sensor data, 14 bytes.
-        let mut buffer = [0u8; 14];
-        // | Sensor  | Register Address        | Bytes | Description  |
-        // | ------- | ----------------------- | ----- | ------------ |
-        // | Accel X | 0x3B (high), 0x3C (low) | 2     | Accel X-axis |
-        // | Accel Y | 0x3D, 0x3E              | 2     | Accel Y-axis |
-        // | Accel Z | 0x3F, 0x40              | 2     | Accel Z-axis |
-        // | Temp    | 0x41, 0x42              | 2     | Temperature  |
-        // | Gyro X  | 0x43, 0x44              | 2     | Gyro X-axis  |
-        // | Gyro Y  | 0x45, 0x46              | 2     | Gyro Y-axis  |
-        // | Gyro Z  | 0x47, 0x48              | 2     | Gyro Z-axis  |
-        // see, https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map1.pdf
-        match ctx
-            .local
+        let local = ctx.local;
+        match local
             .i2c
-            .write_read(SENSOR_I2C_ADDR, &[SENSOR_DATA_REG], &mut buffer)
+            .write_read(SENSOR_I2C_ADDR, &[SENSOR_DATA_REG], local.buffer)
         {
             Ok(_) => {
-                let sensor_values = SensorValues::new(&buffer);
-                ctx.local.complementary_filter.timestep(sensor_values);
+                let sensor_values = SensorValues::new(local.buffer);
+                local.complementary_filter.timestep(sensor_values);
 
                 write!(
-                    s,
+                    local.string,
                     "roll:{:.3}\tpitch:{:.3}\r\n",
-                    ctx.local.complementary_filter.get_roll().to_degrees(),
-                    ctx.local.complementary_filter.get_pitch().to_degrees()
+                    local.complementary_filter.get_roll().to_degrees(),
+                    local.complementary_filter.get_pitch().to_degrees()
                 )
                 .unwrap();
-                ctx.local.uart.write_full_blocking(s.as_bytes());
-                s.clear();
+                local.uart.write_full_blocking(local.string.as_bytes());
+                local.string.clear();
             }
             Err(_) => {
-                ctx.local.uart.write_full_blocking(b"Read error\r\n");
+                local.uart.write_full_blocking(b"Read error\r\n");
             }
         }
     }
